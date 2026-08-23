@@ -72,11 +72,11 @@ public class UsbTetherService extends AccessibilityService {
             return;
         }
 
-        // 第1步：找 USB共享网络 那一行
+        // 第1步：找 USB共享网络 开关
         AccessibilityNodeInfo usb = findNodeByText(root, USB_KEYWORDS);
         if (usb != null) {
-            toast("已找到USB共享网络，正在点击...");
-            toggleRow(usb);
+            toast("已找到USB共享网络，点击开关...");
+            toggleUsb(usb);
             attempt = 0;
             usb.recycle();
             root.recycle();
@@ -86,8 +86,8 @@ public class UsbTetherService extends AccessibilityService {
         // 第2步：找"更多共享设置"并点进去
         AccessibilityNodeInfo more = findNodeByText(root, MORE_KEYWORDS);
         if (more != null) {
-            more.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-            toast("已进入更多共享设置");
+            toast("点击：更多共享设置");
+            tapRow(more);
             attempt = 0;
             more.recycle();
             root.recycle();
@@ -95,11 +95,11 @@ public class UsbTetherService extends AccessibilityService {
             return;
         }
 
-        // 第3步：找"个人热点"并点进去
+        // 第3步：找"个人热点"并点进去（备用路径）
         AccessibilityNodeInfo hotspot = findNodeByText(root, HOTSPOT_KEYWORDS);
         if (hotspot != null) {
-            hotspot.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-            toast("已进入个人热点");
+            toast("点击：个人热点");
+            tapRow(hotspot);
             attempt = 0;
             hotspot.recycle();
             root.recycle();
@@ -107,11 +107,11 @@ public class UsbTetherService extends AccessibilityService {
             return;
         }
 
-        // 第4步：找"移动网络"并点进去
+        // 第4步：找"移动网络"并点进去（备用路径）
         AccessibilityNodeInfo mobile = findNodeByText(root, MOBILE_KEYWORDS);
         if (mobile != null) {
-            mobile.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-            toast("已进入移动网络");
+            toast("点击：移动网络");
+            tapRow(mobile);
             attempt = 0;
             mobile.recycle();
             root.recycle();
@@ -125,24 +125,41 @@ public class UsbTetherService extends AccessibilityService {
         handler.postDelayed(this::tryFindAndClick, scrolled ? 1000 : 1200);
     }
 
-    /**
-     * 真实点击开关：先判断是否已开启，没开启就用坐标模拟手指点击
-     */
-    private void toggleRow(AccessibilityNodeInfo row) {
-        // 判断开关是否已开
+    /** 点击USB共享网络的开关：已开就不点，没开就用真实坐标点开关 */
+    private void toggleUsb(AccessibilityNodeInfo row) {
         AccessibilityNodeInfo check = findCheckable(row);
         if (check != null && check.isChecked()) {
             check.recycle();
-            toast("USB共享网络已经是开启状态，无需操作");
+            toast("USB共享网络已经是开启状态");
             return;
         }
-        if (check != null) check.recycle();
+        if (check != null) {
+            toast("正在点开关...");
+            tapNode(check);
+            check.recycle();
+        } else {
+            toast("正在点这一行...");
+            tapNode(row);
+        }
+    }
 
-        // 用真实坐标点击开关所在行
+    /** 点一行（用于进入子菜单），先找可点击的行再真实点击 */
+    private void tapRow(AccessibilityNodeInfo node) {
+        AccessibilityNodeInfo clickable = findClickable(node);
+        if (clickable != null) {
+            tapNode(clickable);
+            clickable.recycle();
+        } else {
+            tapNode(node);
+        }
+    }
+
+    /** 用真实坐标模拟手指点击 */
+    private void tapNode(AccessibilityNodeInfo node) {
         Rect rect = new Rect();
-        row.getBoundsInScreen(rect);
+        node.getBoundsInScreen(rect);
         if (rect.isEmpty()) {
-            toast("获取开关位置失败，请手动开启");
+            toast("获取点击位置失败");
             return;
         }
         int cx = rect.centerX();
@@ -150,10 +167,12 @@ public class UsbTetherService extends AccessibilityService {
         Path path = new Path();
         path.moveTo(cx, cy);
         GestureDescription gesture = new GestureDescription.Builder()
-                .addStroke(new GestureDescription.StrokeDescription(path, 0, 100))
+                .addStroke(new GestureDescription.StrokeDescription(path, 0, 80))
                 .build();
         boolean ok = dispatchGesture(gesture, null, null);
-        toast(ok ? "已真实点击开关位置，请查看是否开启" : "模拟点击失败，请手动开启");
+        if (!ok) {
+            toast("模拟点击失败，请手动操作");
+        }
     }
 
     /** 在节点树里找可勾选的控件（开关） */
@@ -168,6 +187,15 @@ public class UsbTetherService extends AccessibilityService {
             }
         }
         return null;
+    }
+
+    /** 找自身或向上找可点击的节点 */
+    private AccessibilityNodeInfo findClickable(AccessibilityNodeInfo node) {
+        AccessibilityNodeInfo cur = node;
+        while (cur != null && !cur.isClickable()) {
+            cur = cur.getParent();
+        }
+        return cur;
     }
 
     private AccessibilityNodeInfo findNodeByText(AccessibilityNodeInfo node, String[] keywords) {
