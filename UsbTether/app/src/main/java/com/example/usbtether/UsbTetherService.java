@@ -120,7 +120,7 @@ public class UsbTetherService extends AccessibilityService {
         }
 
         // 第5步：滚动页面再找
-        boolean scrolled = scrollForward(root);
+        boolean scrolled = scrollPage(root);
         root.recycle();
         handler.postDelayed(this::tryFindAndClick, scrolled ? 1000 : 1200);
     }
