@@ -1,10 +1,13 @@
 package com.example.usbtether;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.GestureDescription;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Path;
+import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
@@ -35,6 +38,7 @@ public class UsbTetherService extends AccessibilityService {
             @Override
             public void onReceive(Context context, Intent intent) {
                 attempt = 0;
+                toast("开始自动操作USB共享网络...");
                 openTetherSettings();
             }
         };
@@ -56,7 +60,7 @@ public class UsbTetherService extends AccessibilityService {
 
     private void tryFindAndClick() {
         if (attempt >= 10) {
-            toast("没找到USB共享开关，请手动开一下");
+            toast("自动操作结束：没找到USB开关，请手动开一下");
             attempt = 0;
             return;
         }
@@ -71,8 +75,8 @@ public class UsbTetherService extends AccessibilityService {
         // 第1步：找 USB共享网络 那一行
         AccessibilityNodeInfo usb = findNodeByText(root, USB_KEYWORDS);
         if (usb != null) {
+            toast("已找到USB共享网络，正在点击...");
             toggleRow(usb);
-            toast("已点击USB共享网络开关");
             attempt = 0;
             usb.recycle();
             root.recycle();
@@ -122,29 +126,34 @@ public class UsbTetherService extends AccessibilityService {
     }
 
     /**
-     * 点开 USB 共享开关：优先点行内的开关控件，其次点整行，最后点文字
+     * 真实点击开关：先判断是否已开启，没开启就用坐标模拟手指点击
      */
     private void toggleRow(AccessibilityNodeInfo row) {
-        // 1) 行内有开关控件 → 点开关
+        // 判断开关是否已开
         AccessibilityNodeInfo check = findCheckable(row);
-        if (check != null) {
-            if (check.isChecked()) {
-                check.recycle(); // 已经开了，不用再点
-                return;
-            }
-            check.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        if (check != null && check.isChecked()) {
             check.recycle();
+            toast("USB共享网络已经是开启状态，无需操作");
             return;
         }
-        // 2) 找可点击的整行（自身或父节点）
-        AccessibilityNodeInfo clickable = findClickable(row);
-        if (clickable != null) {
-            clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-            clickable.recycle();
+        if (check != null) check.recycle();
+
+        // 用真实坐标点击开关所在行
+        Rect rect = new Rect();
+        row.getBoundsInScreen(rect);
+        if (rect.isEmpty()) {
+            toast("获取开关位置失败，请手动开启");
             return;
         }
-        // 3) 兜底：直接点文字节点
-        row.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        int cx = rect.centerX();
+        int cy = rect.centerY();
+        Path path = new Path();
+        path.moveTo(cx, cy);
+        GestureDescription gesture = new GestureDescription.Builder()
+                .addStroke(new GestureDescription.StrokeDescription(path, 0, 100))
+                .build();
+        boolean ok = dispatchGesture(gesture, null, null);
+        toast(ok ? "已真实点击开关位置，请查看是否开启" : "模拟点击失败，请手动开启");
     }
 
     /** 在节点树里找可勾选的控件（开关） */
@@ -159,15 +168,6 @@ public class UsbTetherService extends AccessibilityService {
             }
         }
         return null;
-    }
-
-    /** 找自身或向上找可点击的节点 */
-    private AccessibilityNodeInfo findClickable(AccessibilityNodeInfo node) {
-        AccessibilityNodeInfo cur = node;
-        while (cur != null && !cur.isClickable()) {
-            cur = cur.getParent();
-        }
-        return cur;
     }
 
     private AccessibilityNodeInfo findNodeByText(AccessibilityNodeInfo node, String[] keywords) {
@@ -194,14 +194,14 @@ public class UsbTetherService extends AccessibilityService {
         return false;
     }
 
-    private boolean scrollForward(AccessibilityNodeInfo node) {
+    private boolean scrollPage(AccessibilityNodeInfo node) {
         if (node.isScrollable()) {
             return node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD);
         }
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) {
-                if (scrollForward(child)) return true;
+                if (scrollPage(child)) return true;
                 child.recycle();
             }
         }
