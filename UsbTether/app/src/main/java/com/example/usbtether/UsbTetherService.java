@@ -56,7 +56,7 @@ public class UsbTetherService extends AccessibilityService {
 
     private void tryFindAndClick() {
         if (attempt >= 10) {
-            toast("没找到USB开关，请手动开一下");
+            toast("没找到USB共享开关，请手动开一下");
             attempt = 0;
             return;
         }
@@ -68,13 +68,11 @@ public class UsbTetherService extends AccessibilityService {
             return;
         }
 
-        // 第1步：直接找 USB共享网络 开关
+        // 第1步：找 USB共享网络 那一行
         AccessibilityNodeInfo usb = findNodeByText(root, USB_KEYWORDS);
         if (usb != null) {
-            if (!isRowChecked(usb)) {
-                usb.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-            }
-            toast("已操作USB共享网络");
+            toggleRow(usb);
+            toast("已点击USB共享网络开关");
             attempt = 0;
             usb.recycle();
             root.recycle();
@@ -117,10 +115,59 @@ public class UsbTetherService extends AccessibilityService {
             return;
         }
 
-        // 第5步：都找不到就滚动页面再找
+        // 第5步：滚动页面再找
         boolean scrolled = scrollForward(root);
         root.recycle();
         handler.postDelayed(this::tryFindAndClick, scrolled ? 1000 : 1200);
+    }
+
+    /**
+     * 点开 USB 共享开关：优先点行内的开关控件，其次点整行，最后点文字
+     */
+    private void toggleRow(AccessibilityNodeInfo row) {
+        // 1) 行内有开关控件 → 点开关
+        AccessibilityNodeInfo check = findCheckable(row);
+        if (check != null) {
+            if (check.isChecked()) {
+                check.recycle(); // 已经开了，不用再点
+                return;
+            }
+            check.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+            check.recycle();
+            return;
+        }
+        // 2) 找可点击的整行（自身或父节点）
+        AccessibilityNodeInfo clickable = findClickable(row);
+        if (clickable != null) {
+            clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+            clickable.recycle();
+            return;
+        }
+        // 3) 兜底：直接点文字节点
+        row.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+    }
+
+    /** 在节点树里找可勾选的控件（开关） */
+    private AccessibilityNodeInfo findCheckable(AccessibilityNodeInfo node) {
+        if (node.isCheckable()) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) {
+                AccessibilityNodeInfo result = findCheckable(child);
+                if (result != null) return result;
+                child.recycle();
+            }
+        }
+        return null;
+    }
+
+    /** 找自身或向上找可点击的节点 */
+    private AccessibilityNodeInfo findClickable(AccessibilityNodeInfo node) {
+        AccessibilityNodeInfo cur = node;
+        while (cur != null && !cur.isClickable()) {
+            cur = cur.getParent();
+        }
+        return cur;
     }
 
     private AccessibilityNodeInfo findNodeByText(AccessibilityNodeInfo node, String[] keywords) {
@@ -143,18 +190,6 @@ public class UsbTetherService extends AccessibilityService {
     private boolean matches(String s, String[] keywords) {
         for (String k : keywords) {
             if (s.contains(k)) return true;
-        }
-        return false;
-    }
-
-    private boolean isRowChecked(AccessibilityNodeInfo node) {
-        if (node.isCheckable() && node.isChecked()) return true;
-        for (int i = 0; i < node.getChildCount(); i++) {
-            AccessibilityNodeInfo child = node.getChild(i);
-            if (child != null) {
-                if (isRowChecked(child)) return true;
-                child.recycle();
-            }
         }
         return false;
     }
