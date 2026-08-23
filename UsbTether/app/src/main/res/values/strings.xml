@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">一键USB共享</string>
+    <string name="accessibility_service_description">用于自动点击设置中的USB共享网络开关，实现一键开启</string>
+</resources>
